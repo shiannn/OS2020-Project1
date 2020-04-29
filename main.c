@@ -1,7 +1,9 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sched.h>
 
 
 #define procNameLength 32
@@ -12,6 +14,7 @@
 #define RR 2
 #define SJF 3
 #define PSJF 4
+#define schedulingCPU 0
 
 #define debugInput
 
@@ -31,6 +34,8 @@ void printProcesses(int N){
 }
 
 int do_schedule(Process processes[], int processNum, int policy);
+int process2cpu(int pid, int coreIdx);
+int process_pick(int pid);
 int main(int argc, char* argv[]){
     scanf("%s",policy_For_schedule);
     int procNum;
@@ -86,4 +91,44 @@ int do_schedule(Process processes[], int processNum, int policy){
     #ifdef debugInput
     printProcesses(processNum);
     #endif
+    //using two core machine
+    //assign scheduling process to one core
+    int scheduler_pid = getpid();
+    int ret_process2cpu = process2cpu(scheduler_pid, schedulingCPU);
+    printf("ret_process2cpu %d\n",ret_process2cpu);
+    int ret_process_pick = process_pick(scheduler_pid);
+    printf("ret_process_pick %d\n",ret_process_pick);
+    //give scheduler higher priority
+}
+int process_pick(int pid){
+    struct sched_param schedule_parameter;
+
+    /* SCHED_OTHER should set priority to 0 */
+	schedule_parameter.sched_priority = 0;
+
+    int ret = sched_setscheduler(pid, SCHED_OTHER, &schedule_parameter);
+	
+	if (ret < 0) {
+		printf("sched_setscheduler:pick\n");
+		return -1;
+	}
+
+	return ret;
+}
+int process2cpu(int pid, int coreIdx){
+    if(coreIdx > sizeof(cpu_set_t)){
+        printf("exceed core bound!!!\n");
+        return -1;
+    }
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    CPU_SET(coreIdx, &mask);
+
+    int ret = sched_setaffinity(pid, sizeof(mask), &mask);
+    if(ret < 0 ){
+        printf("sched_setaffinity error!!!\n");
+        exit(1);
+    }
+    
+    return 0;
 }
