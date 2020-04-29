@@ -7,7 +7,6 @@
 #include <sys/types.h> 
 #include <sys/wait.h>
 
-
 #define procNameLength 32
 #define maxProcNum 30
 #define policyName 256
@@ -32,6 +31,7 @@ typedef struct process {
     int executeTime;
     pid_t pid;
 }Process;
+
 char policy_For_schedule[policyName];
 Process processes[maxProcNum];
 char str_dmesg[maxTodemsg];
@@ -86,7 +86,7 @@ int main(int argc, char* argv[]){
         printf("policy error!!!\n");
     }
     
-    printf("policy: %d\n", policy);
+    //printf("policy: %d\n", policy);
     do_schedule(processes, procNum, policy);
     return 0;
 }
