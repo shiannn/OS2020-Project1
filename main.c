@@ -4,6 +4,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sched.h>
+#include <sys/types.h> 
+#include <sys/wait.h>
 
 
 #define procNameLength 32
@@ -20,7 +22,7 @@
 
 #define UNIT_TIME() { volatile unsigned long i;for (i = 0; i < 1000000UL; i++);}                                       \
 
-#define debugInput
+//#define debugInput
 #define sysGET_TIME 548
 #define sysPRINTK 549
 
@@ -34,6 +36,12 @@ char policy_For_schedule[policyName];
 Process processes[maxProcNum];
 char str_dmesg[maxTodemsg];
 
+int last_context_switch_time;
+int time_unit = 0;
+int runningIdx = -1;
+	
+int finish_num = 0;
+
 void printProcesses(int N){
     for(int i=0;i<N;i++){
         printf("%s\n%d\n%d\n", processes[i].name, processes[i].readyTime, processes[i].executeTime);
@@ -43,6 +51,9 @@ void printProcesses(int N){
 int do_schedule(Process processes[], int processNum, int policy);
 int process2cpu(int pid, int coreIdx);
 int process_pick(int pid);
+int process_idle(int pid);
+int process_create(Process process);
+
 int main(int argc, char* argv[]){
     scanf("%s",policy_For_schedule);
     int procNum;
@@ -92,47 +103,129 @@ int cmp(const void *a, const void *b){
         return 0;
     }
 }
-int do_schedule(Process processes[], int processNum, int policy){
-    //sorting the process with the ready time
-    qsort(processes, processNum, sizeof(Process), cmp);
-    #ifdef debugInput
-    printProcesses(processNum);
-    #endif
-    //using two core machine
-    //assign scheduling process to one core
-    int scheduler_pid = getpid();
-    int ret_process2cpu = process2cpu(scheduler_pid, schedulingCPU);
-    printf("ret_process2cpu %d\n",ret_process2cpu);
-    int ret_process_pick = process_pick(scheduler_pid);
-    printf("ret_process_pick %d\n",ret_process_pick);
-    //give scheduler higher priority
 
-    int time_unit = 0;
-    int runningIdx = -1;
-    int finish_num = 0;
-
-    while(1){
-        // if there is a process running and finish
-        if (runningIdx != -1 && processes[runningIdx].executeTime == 0){
-            waitpid(processes[runningIdx].pid, NULL, 0);
-            printf("%s %d\n", processes[runningIdx].name, processes[runningIdx].pid);
-            fflush(stdout);
-
-            finish_num += 1;
-            runningIdx = -1;
-
-            if(finish_num == processNum) break;
-        }
-
-        // if process is ready
-        for (int i=0;i<processNum;i++){
-            if(processes[i].readyTime == time_unit){
-                // fork a process and start execute
-                processes[i].pid = process_create(processes[i]);
-                process_idle(processes[i].pid);
+int select_next(Process processes[], int processNum, int policy){
+    if(runningIdx != -1){
+        switch(policy){
+            case SJF: case FIFO:{
+                return runningIdx;
             }
         }
     }
+    int retProcessIdx = -1;
+    switch(policy){
+        case PSJF: case SJF:{
+            for(int i=0;i<processNum;i++){
+                if(processes[i].pid==-1 || processes[i].executeTime==0){
+                    continue;
+                }
+                if(retProcessIdx==-1 || (processes[i].executeTime < processes[retProcessIdx].executeTime)){
+                    retProcessIdx = i;
+                }
+            }
+            break;
+        }
+        case FIFO:{
+            for(int i=0;i<processNum;i++){
+                if(processes[i].pid == -1 || processes[i].executeTime == 0){
+                    continue;
+                }
+                if(retProcessIdx == -1 || (processes[i].readyTime < processes[retProcessIdx].readyTime)){
+                    retProcessIdx = i;
+                }
+            }
+            break;
+        }
+        case RR:{
+            if(runningIdx == -1){
+                for(int i=0;i<processNum;i++){
+                    if(processes[i].pid != -1 && processes[i].executeTime > 0){
+                        retProcessIdx = i;
+                        break;
+                    }
+                }
+            }
+            else if((time_unit - last_context_switch_time) % 500 == 0){
+                retProcessIdx = (runningIdx + 1) % processNum;
+                while(processes[retProcessIdx].pid == -1 || processes[retProcessIdx].executeTime == 0){
+                    retProcessIdx = (retProcessIdx + 1) % processNum;
+                }
+            }
+            else{
+                retProcessIdx = runningIdx;
+            }
+            break;
+        }
+    }
+    return retProcessIdx;
+}
+
+int do_schedule(struct process proc[], int nproc, int policy) {
+	qsort(proc, nproc, sizeof(struct process), cmp);
+
+	/* Initial pid = -1 imply not ready */
+	for (int i = 0; i < nproc; i++)
+		proc[i].pid = -1;
+
+	/* Set single core prevent from preemption */
+	process2cpu(getpid(), schedulingCPU);
+	
+	/* Set high priority to scheduler */
+	process_pick(getpid());
+	
+	/* Initial scheduler */
+	time_unit = 0;
+	runningIdx = -1;
+	finish_num = 0;
+	
+	while(1) {
+		//fprintf(stderr, "Current time: %d\n", ntime);
+
+		/* Check if running process finish */
+		if (runningIdx != -1 && proc[runningIdx].executeTime == 0) {
+		
+			//kill(running, SIGKILL);
+			waitpid(proc[runningIdx].pid, NULL, 0);
+			printf("%s %d\n", proc[runningIdx].name, proc[runningIdx].pid);
+			fflush(stdout);
+			
+			runningIdx = -1;
+			finish_num++;
+
+			/* All process finish */
+			if (finish_num == nproc)
+				break;
+		}
+
+		/* Check if process ready and execute */
+		for (int i = 0; i < nproc; i++) {
+			if (proc[i].readyTime == time_unit) {
+				proc[i].pid = process_create(proc[i]);
+				process_idle(proc[i].pid);
+			}
+
+		}
+
+		/* Select next running process */
+		int next = select_next(proc, nproc, policy);
+		if (next != -1) {
+			/* Context switch */
+			if (runningIdx != next) {
+				process_pick(proc[next].pid);
+				process_idle(proc[runningIdx].pid);
+				runningIdx = next;
+				last_context_switch_time = time_unit;
+			}
+		}
+
+		/* Run an unit of time */
+		UNIT_TIME();
+		if (runningIdx != -1)
+			proc[runningIdx].executeTime--;
+		time_unit++;
+	}
+
+	return 0;
 }
 
 int process_idle(int pid){
@@ -163,7 +256,7 @@ int process_create(Process process){
         }
         unsigned long edSecond, ednSecond;
         syscall(sysGET_TIME, &edSecond, &ednSecond);
-        int scheduled_process_pid = getpid()
+        int scheduled_process_pid = getpid();
         sprintf(str_dmesg, "[Project1] %d %lu.%09lu %lu.%09lu\n", scheduled_process_pid, stSecond, stnSecond, edSecond, ednSecond);
         syscall(sysPRINTK, str_dmesg);
         exit(0);
@@ -185,7 +278,7 @@ int process_pick(int pid){
     int ret = sched_setscheduler(pid, SCHED_OTHER, &schedule_parameter);
 	
 	if (ret < 0) {
-		printf("sched_setscheduler:pick\n");
+		printf("sched_setscheduler:pick error\n");
 		return -1;
 	}
 
