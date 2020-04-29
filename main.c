@@ -32,8 +32,19 @@ typedef struct process {
     pid_t pid;
 }Process;
 
+typedef struct Queue{
+    Process processArray[maxProcNum];
+    int size;
+    int st, ed;
+}Queue;
+
 char policy_For_schedule[policyName];
 Process processes[maxProcNum];
+
+Process processQueue[maxProcNum];
+int head = 0;
+int tail = 0;
+
 char str_dmesg[maxTodemsg];
 
 int last_context_switch_time;
@@ -48,13 +59,30 @@ void printProcesses(int N){
     }
 }
 
-int do_schedule(Process processes[], int processNum, int policy);
+int do_schedule(Process processes[], Queue* qPtr, int processNum, int policy);
 int process2cpu(int pid, int coreIdx);
 int process_pick(int pid);
 int process_idle(int pid);
 int process_create(Process process);
 
+void enqueue(Queue* qPtr, Process item);
+Process dequeue(Queue* qPtr);
+Queue CreateQueue();
+
+int main2(int argc, char* argv[]){
+    Queue q = CreateQueue();
+    Process item;
+    strcpy(item.name, "abcde");
+    enqueue(&q, item);
+    printf("%d\n",q.size);
+    Process ret = dequeue(&q);
+    printf("%s\n", ret.name);
+    printf("%d\n",q.size);
+}
+
 int main(int argc, char* argv[]){
+    Queue q = CreateQueue();
+
     scanf("%s",policy_For_schedule);
     int procNum;
     scanf("%d", &procNum);
@@ -87,7 +115,7 @@ int main(int argc, char* argv[]){
     }
     
     //printf("policy: %d\n", policy);
-    do_schedule(processes, procNum, policy);
+    do_schedule(processes, &q, procNum, policy);
     return 0;
 }
 int cmp(const void *a, const void *b){
@@ -104,7 +132,7 @@ int cmp(const void *a, const void *b){
     }
 }
 
-int select_next(Process processes[], int processNum, int policy){
+int select_next(Process processes[], Queue* qPtr,  int processNum, int policy){
     if(runningIdx != -1){
         switch(policy){
             case SJF: case FIFO:{
@@ -137,6 +165,30 @@ int select_next(Process processes[], int processNum, int policy){
             break;
         }
         case RR:{
+            /*
+            if(runningIdx == -1){
+                for(int i=0;i<processNum;i++){
+                    if(processQueue[i].pid != -1 && processQueue[i].executeTime > 0){
+                        retProcessIdx = i;
+                        break;
+                    }
+                }
+            }
+            else if((time_unit - last_context_switch_time) % 500 == 0){
+                retProcessIdx = (runningIdx + 1) % processNum;
+                while(processQueue[retProcessIdx].pid == -1 || processQueue[retProcessIdx].executeTime == 0){
+                    retProcessIdx = (retProcessIdx + 1) % processNum;
+                }
+            }
+            else{
+                retProcessIdx = runningIdx;
+            }
+            break;
+            */
+            
+            //queue ready 時才會 insert
+            //finish 則 pop 掉
+            //context switch 則 pop 再 push
             if(runningIdx == -1){
                 for(int i=0;i<processNum;i++){
                     if(processes[i].pid != -1 && processes[i].executeTime > 0){
@@ -155,12 +207,13 @@ int select_next(Process processes[], int processNum, int policy){
                 retProcessIdx = runningIdx;
             }
             break;
+            
         }
     }
     return retProcessIdx;
 }
 
-int do_schedule(struct process proc[], int nproc, int policy) {
+int do_schedule(struct process proc[],Queue* qPtr, int nproc, int policy) {
 	qsort(proc, nproc, sizeof(struct process), cmp);
 
 	/* Initial pid = -1 imply not ready */
@@ -200,14 +253,21 @@ int do_schedule(struct process proc[], int nproc, int policy) {
 		/* Check if process ready and execute */
 		for (int i = 0; i < nproc; i++) {
 			if (proc[i].readyTime == time_unit) {
-				proc[i].pid = process_create(proc[i]);
+                // create put in array
+                int tempPid = process_create(proc[i]);
+				proc[i].pid = tempPid;
+
+                // create in queue
+                enqueue(qPtr, proc[i]);
+                
+
 				process_idle(proc[i].pid);
 			}
 
 		}
 
 		/* Select next running process */
-		int next = select_next(proc, nproc, policy);
+		int next = select_next(proc, qPtr, nproc, policy);
 		if (next != -1) {
 			/* Context switch */
 			if (runningIdx != next) {
