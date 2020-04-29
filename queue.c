@@ -7,6 +7,7 @@ typedef struct process {
     int readyTime;
     int executeTime;
     pid_t pid;
+    int id;
 }Process;
 
 typedef struct Queue{

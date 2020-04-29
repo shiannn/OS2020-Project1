@@ -30,6 +30,7 @@ typedef struct process {
     int readyTime;
     int executeTime;
     pid_t pid;
+    int id;
 }Process;
 
 typedef struct Queue{
@@ -94,6 +95,7 @@ int main(int argc, char* argv[]){
         strcpy(processes[i].name, procName);
         processes[i].readyTime = readyTime;
         processes[i].executeTime = endTime;
+        processes[i].id = i;
     }
 
     int policy;
@@ -197,9 +199,18 @@ int select_next(Process processes[], Queue* qPtr,  int processNum, int policy){
                     }
                 }
                 */
-                //head of queue
+                /*
+                Process dummy = head(qPtr);
+                while(dummy.executeTime==0){
+                    dequeue(qPtr);
+                    dummy = head(qPtr);
+                }
+                */
+                //head of queue, which is not finished
                 if(qPtr -> size > 0){
-                    retProcessIdx = head(qPtr);
+                    Process headProcess = head(qPtr);
+                    retProcessIdx = headProcess.id;
+                    //printf("new select %d\n", headProcess.id);
                 }
                 // if empty then retProcessIdx still -1
             }
@@ -214,8 +225,18 @@ int select_next(Process processes[], Queue* qPtr,  int processNum, int policy){
                 if(qPtr -> size > 0){
                     Process to_be_switch = dequeue(qPtr);
                     enqueue(qPtr, to_be_switch);
+
+                    /*
+                    Process dummy = head(qPtr);
+                    while(dummy.executeTime==0){
+                        dequeue(qPtr);
+                        dummy = head(qPtr);
+                    }
+                    */
                     //new head is the next
-                    retProcessIdx = head(qPtr);
+                    Process headProcess = head(qPtr);
+                    //printf("context switch to %d\n", headProcess.id);
+                    retProcessIdx = headProcess.id;
                 }
             }
             else{
@@ -298,6 +319,11 @@ int do_schedule(struct process proc[],Queue* qPtr, int nproc, int policy) {
 		UNIT_TIME();
 		if (runningIdx != -1)
 			proc[runningIdx].executeTime--;
+            //execution time in queue should also be down
+            qPtr->processArray[qPtr->st].executeTime -= 1;
+            if(qPtr->processArray[qPtr->st].executeTime == 0){
+                dequeue(qPtr);
+            }
 		time_unit++;
 	}
 
