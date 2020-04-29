@@ -9,14 +9,20 @@
 #define procNameLength 32
 #define maxProcNum 30
 #define policyName 256
+#define maxTodemsg 200
 
 #define FIFO 1
 #define RR 2
 #define SJF 3
 #define PSJF 4
 #define schedulingCPU 0
+#define childCPU 1
+
+#define UNIT_TIME() { volatile unsigned long i;for (i = 0; i < 1000000UL; i++);}                                       \
 
 #define debugInput
+#define sysGET_TIME 548
+#define sysPRINTK 549
 
 typedef struct process {
     char name[procNameLength];
@@ -26,6 +32,7 @@ typedef struct process {
 }Process;
 char policy_For_schedule[policyName];
 Process processes[maxProcNum];
+char str_dmesg[maxTodemsg];
 
 void printProcesses(int N){
     for(int i=0;i<N;i++){
@@ -99,6 +106,75 @@ int do_schedule(Process processes[], int processNum, int policy){
     int ret_process_pick = process_pick(scheduler_pid);
     printf("ret_process_pick %d\n",ret_process_pick);
     //give scheduler higher priority
+
+    int time_unit = 0;
+    int runningIdx = -1;
+    int finish_num = 0;
+
+    while(1){
+        // if there is a process running and finish
+        if (runningIdx != -1 && processes[runningIdx].executeTime == 0){
+            waitpid(processes[runningIdx].pid, NULL, 0);
+            printf("%s %d\n", processes[runningIdx].name, processes[runningIdx].pid);
+            fflush(stdout);
+
+            finish_num += 1;
+            runningIdx = -1;
+
+            if(finish_num == processNum) break;
+        }
+
+        // if process is ready
+        for (int i=0;i<processNum;i++){
+            if(processes[i].readyTime == time_unit){
+                // fork a process and start execute
+                processes[i].pid = process_create(processes[i]);
+                process_idle(processes[i].pid);
+            }
+        }
+    }
+}
+
+int process_idle(int pid){
+    struct sched_param schedule_parameter;
+    schedule_parameter.sched_priority = 0;
+    int ret = sched_setscheduler(pid, SCHED_IDLE, &schedule_parameter);
+    if (ret < 0){
+        printf("sched_setscheduler idle error!!!\n");
+        return -1;
+    }
+    return ret;
+}
+
+int process_create(Process process){
+    int pid = fork();
+    if(pid<0){
+        printf("fork error!!!\n");
+        return -1;
+    }
+    else if(pid==0){
+        unsigned long stSecond, stnSecond;
+        syscall(sysGET_TIME, &stSecond, &stnSecond);
+
+        for (int i=0;i < process.executeTime; i++){
+            //execute executeTime TIME UNITS
+            //the for loop from TA
+            UNIT_TIME();
+        }
+        unsigned long edSecond, ednSecond;
+        syscall(sysGET_TIME, &edSecond, &ednSecond);
+        int scheduled_process_pid = getpid()
+        sprintf(str_dmesg, "[Project1] %d %lu.%09lu %lu.%09lu\n", scheduled_process_pid, stSecond, stnSecond, edSecond, ednSecond);
+        syscall(sysPRINTK, str_dmesg);
+        exit(0);
+    }
+    else{
+        //scheduler
+        //assign the child process to another core
+        //fork will return child process pid to parent
+        process2cpu(pid, childCPU);
+        return pid;
+    }
 }
 int process_pick(int pid){
     struct sched_param schedule_parameter;
