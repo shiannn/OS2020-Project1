@@ -42,8 +42,6 @@ char policy_For_schedule[policyName];
 Process processes[maxProcNum];
 
 Process processQueue[maxProcNum];
-int head = 0;
-int tail = 0;
 
 char str_dmesg[maxTodemsg];
 
@@ -68,6 +66,7 @@ int process_create(Process process);
 void enqueue(Queue* qPtr, Process item);
 Process dequeue(Queue* qPtr);
 Queue CreateQueue();
+Process head(Queue* qPtr);
 
 int main2(int argc, char* argv[]){
     Queue q = CreateQueue();
@@ -190,20 +189,37 @@ int select_next(Process processes[], Queue* qPtr,  int processNum, int policy){
             //finish 則 pop 掉
             //context switch 則 pop 再 push
             if(runningIdx == -1){
+                /*
                 for(int i=0;i<processNum;i++){
                     if(processes[i].pid != -1 && processes[i].executeTime > 0){
                         retProcessIdx = i;
                         break;
                     }
                 }
+                */
+                //head of queue
+                if(qPtr -> size > 0){
+                    retProcessIdx = head(qPtr);
+                }
+                // if empty then retProcessIdx still -1
             }
             else if((time_unit - last_context_switch_time) % 500 == 0){
+                /*
                 retProcessIdx = (runningIdx + 1) % processNum;
                 while(processes[retProcessIdx].pid == -1 || processes[retProcessIdx].executeTime == 0){
                     retProcessIdx = (retProcessIdx + 1) % processNum;
                 }
+                */
+                //dequeue and enqueue
+                if(qPtr -> size > 0){
+                    Process to_be_switch = dequeue(qPtr);
+                    enqueue(qPtr, to_be_switch);
+                    //new head is the next
+                    retProcessIdx = head(qPtr);
+                }
             }
             else{
+                //something is running and not yet context switch
                 retProcessIdx = runningIdx;
             }
             break;

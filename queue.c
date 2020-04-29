@@ -36,3 +36,8 @@ Process dequeue(Queue* qPtr){
     qPtr-> st = (qPtr-> st+1)%maxProcesses;
     return ret;
 }
+
+Process head(Queue* qPtr){
+    Process ret = qPtr -> processArray[qPtr-> st];
+    return ret;
+}
